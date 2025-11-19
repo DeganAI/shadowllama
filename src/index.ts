@@ -2,7 +2,6 @@
 // ShadowLlama Main Application - Cyberpunk Dark Web Proxy
 
 import { createAgentApp } from "@lucid-dreams/agent-kit";
-import type { Hono } from "hono";
 import { config, BANNER, getRandomPhrase } from "./config/index.js";
 import { ShadowLlamaDB } from "./db/index.js";
 import { serve } from "@hono/node-server";
@@ -29,19 +28,12 @@ seedDemoNodes();
 // CREATE AGENT APP
 // ============================================================================
 
-const { app, addEntrypoint }: { app: Hono; addEntrypoint: any } = createAgentApp(
-  {
-    name: "shadowllama-agent",
-    version: "1.0.0",
-    description:
-      "🌐 Decentralized pay-per-second dark web proxy + AI-powered underground marketplace. Tor/I2P hybrid with x402 micropayments.",
-  },
-  {
-    payToAddress: config.payments.baseAddress,
-    network: config.payments.network as "base",
-    facilitatorUrl: config.payments.facilitatorUrl,
-  }
-);
+const { app, addEntrypoint } = createAgentApp({
+  name: "shadowllama-agent",
+  version: "1.0.0",
+  description:
+    "🌐 Decentralized pay-per-second dark web proxy + AI-powered underground marketplace. Tor/I2P hybrid with x402 micropayments.",
+});
 
 // ============================================================================
 // ENTRYPOINT 1: Start Proxy Stream
