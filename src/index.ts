@@ -28,12 +28,15 @@ seedDemoNodes();
 // CREATE AGENT APP
 // ============================================================================
 
-const { app, addEntrypoint } = createAgentApp({
+const agentApp: any = createAgentApp({
   name: "shadowllama-agent",
   version: "1.0.0",
   description:
     "🌐 Decentralized pay-per-second dark web proxy + AI-powered underground marketplace. Tor/I2P hybrid with x402 micropayments.",
 });
+
+const app = agentApp.app;
+const addEntrypoint = agentApp.addEntrypoint;
 
 // ============================================================================
 // ENTRYPOINT 1: Start Proxy Stream
@@ -418,13 +421,12 @@ addEntrypoint({
 });
 
 // ============================================================================
-// ENTRYPOINT 10: System Info (Free)
+// ENTRYPOINT 10: System Info
 // ============================================================================
 
 addEntrypoint({
   key: "system-info",
   description: "ℹ️ Get information about the ShadowLlama network.",
-  requiresPayment: false,
   async handler() {
     return {
       output: {
