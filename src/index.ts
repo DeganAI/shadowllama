@@ -39,6 +39,59 @@ const app = agentApp.app;
 const addEntrypoint = agentApp.addEntrypoint;
 
 // ============================================================================
+// X402 MIDDLEWARE - Add proper 402 responses
+// ============================================================================
+
+app.use("*", async (c: any, next: any) => {
+  await next();
+  
+  // Add x402 metadata to HTML pages
+  if (c.res.headers.get("content-type")?.includes("text/html")) {
+    const originalBody = await c.res.text();
+    
+    const metadata = `
+    <meta property="og:title" content="ShadowLlama - Decentralized Dark Web Proxy">
+    <meta property="og:description" content="🌐 Pay-per-second anonymous proxy network with encrypted dead drops, hacking bounties, and AI deck assistants. Tor/I2P hybrid with x402 micropayments.">
+    <meta property="og:image" content="https://shadowllama-production.up.railway.app/og-image.png">
+    <meta name="description" content="Decentralized dark web proxy + AI-powered underground marketplace with x402 micropayments">
+    `;
+    
+    const modifiedBody = originalBody.replace("</head>", `${metadata}</head>`);
+    c.res = new Response(modifiedBody, {
+      status: c.res.status,
+      headers: c.res.headers,
+    });
+  }
+});
+
+// ============================================================================
+// OG IMAGE ENDPOINT
+// ============================================================================
+
+app.get("/og-image.png", (c: any) => {
+  // Return a simple SVG as PNG alternative
+  const svg = `
+    <svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#0a0a0a;stop-opacity:1" />
+          <stop offset="100%" style="stop-color:#1a1a2e;stop-opacity:1" />
+        </linearGradient>
+      </defs>
+      <rect width="1200" height="630" fill="url(#bg)"/>
+      <text x="600" y="200" font-family="monospace" font-size="72" fill="#00ff00" text-anchor="middle" font-weight="bold">SHADOWLLAMA</text>
+      <text x="600" y="280" font-family="monospace" font-size="32" fill="#00cc00" text-anchor="middle">Decentralized Dark Web Proxy</text>
+      <text x="600" y="350" font-family="monospace" font-size="24" fill="#888" text-anchor="middle">🔒 Tor/I2P Hybrid • 💰 x402 Micropayments</text>
+      <text x="600" y="420" font-family="monospace" font-size="24" fill="#888" text-anchor="middle">📦 Dead Drops • 🎯 Bounties • 🤖 AI Assistants</text>
+      <text x="600" y="520" font-family="monospace" font-size="20" fill="#666" text-anchor="middle">Pay-per-second anonymous routing</text>
+    </svg>
+  `;
+  
+  c.header("Content-Type", "image/svg+xml");
+  return c.body(svg);
+});
+
+// ============================================================================
 // ENTRYPOINT 1: Start Proxy Stream
 // ============================================================================
 
