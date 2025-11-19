@@ -39,67 +39,218 @@ const app = agentApp.app;
 const addEntrypoint = agentApp.addEntrypoint;
 
 // ============================================================================
-// X402 MIDDLEWARE - Add proper 402 responses
+// X402 PAYMENT MIDDLEWARE
 // ============================================================================
 
-app.use("*", async (c: any, next: any) => {
-  await next();
-  
-  // Add x402 metadata to HTML pages
-  if (c.res.headers.get("content-type")?.includes("text/html")) {
-    const originalBody = await c.res.text();
+const requirePayment = (options: { amount: number; description: string }) => {
+  return async (c: any, next: any) => {
+    const paymentProof = c.req.header("x-payment-proof");
     
-    const metadata = `
-    <meta property="og:title" content="ShadowLlama - Decentralized Dark Web Proxy">
-    <meta property="og:description" content="🌐 Pay-per-second anonymous proxy network with encrypted dead drops, hacking bounties, and AI deck assistants. Tor/I2P hybrid with x402 micropayments.">
-    <meta property="og:image" content="https://shadowllama-production.up.railway.app/og-image.png">
-    <meta name="description" content="Decentralized dark web proxy + AI-powered underground marketplace with x402 micropayments">
-    `;
+    if (!paymentProof) {
+      // Return 402 with proper x402 schema
+      return c.json(
+        {
+          x402Version: 1,
+          accepts: [
+            {
+              scheme: "exact",
+              network: "base",
+              maxAmountRequired: options.amount.toString(),
+              resource: c.req.path,
+              description: options.description,
+              mimeType: "application/json",
+              payTo: config.payments.baseAddress,
+              maxTimeoutSeconds: 300,
+              asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+              outputSchema: {
+                input: {
+                  type: "http",
+                  method: "POST",
+                  bodyType: "json",
+                  bodyFields: {
+                    input: {
+                      type: "object",
+                      required: false,
+                      description: "Input parameters for the endpoint",
+                    },
+                  },
+                },
+                output: {
+                  output: {
+                    type: "object",
+                    description: "Response data from the endpoint",
+                  },
+                },
+              },
+            },
+          ],
+        },
+        402
+      );
+    }
     
-    const modifiedBody = originalBody.replace("</head>", `${metadata}</head>`);
-    c.res = new Response(modifiedBody, {
-      status: c.res.status,
-      headers: c.res.headers,
-    });
-  }
-});
+    // Payment proof provided, continue
+    await next();
+  };
+};
 
 // ============================================================================
-// OG IMAGE ENDPOINT
+// OG IMAGE AND METADATA
 // ============================================================================
 
 app.get("/og-image.png", (c: any) => {
-  // Return a simple SVG as PNG alternative
-  const svg = `
-    <svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:#0a0a0a;stop-opacity:1" />
-          <stop offset="100%" style="stop-color:#1a1a2e;stop-opacity:1" />
-        </linearGradient>
-      </defs>
-      <rect width="1200" height="630" fill="url(#bg)"/>
-      <text x="600" y="200" font-family="monospace" font-size="72" fill="#00ff00" text-anchor="middle" font-weight="bold">SHADOWLLAMA</text>
-      <text x="600" y="280" font-family="monospace" font-size="32" fill="#00cc00" text-anchor="middle">Decentralized Dark Web Proxy</text>
-      <text x="600" y="350" font-family="monospace" font-size="24" fill="#888" text-anchor="middle">🔒 Tor/I2P Hybrid • 💰 x402 Micropayments</text>
-      <text x="600" y="420" font-family="monospace" font-size="24" fill="#888" text-anchor="middle">📦 Dead Drops • 🎯 Bounties • 🤖 AI Assistants</text>
-      <text x="600" y="520" font-family="monospace" font-size="20" fill="#666" text-anchor="middle">Pay-per-second anonymous routing</text>
-    </svg>
-  `;
+  const svg = `<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#0a0a0a;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="630" fill="url(#bg)"/>
+    <text x="600" y="200" font-family="monospace" font-size="72" fill="#00ff00" text-anchor="middle" font-weight="bold">SHADOWLLAMA</text>
+    <text x="600" y="280" font-family="monospace" font-size="32" fill="#00cc00" text-anchor="middle">Decentralized Dark Web Proxy</text>
+    <text x="600" y="350" font-family="monospace" font-size="24" fill="#888" text-anchor="middle">🔒 Tor/I2P Hybrid • 💰 x402 Micropayments</text>
+    <text x="600" y="420" font-family="monospace" font-size="24" fill="#888" text-anchor="middle">📦 Dead Drops • 🎯 Bounties • 🤖 AI Assistants</text>
+    <text x="600" y="520" font-family="monospace" font-size="20" fill="#666" text-anchor="middle">Pay-per-second anonymous routing</text>
+  </svg>`;
   
   c.header("Content-Type", "image/svg+xml");
   return c.body(svg);
 });
 
+// Override root to add proper meta tags
+app.get("/", (c: any) => {
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadowLlama - Decentralized Dark Web Proxy</title>
+  <meta name="description" content="🌐 Pay-per-second anonymous proxy network with encrypted dead drops, hacking bounties, and AI deck assistants. Tor/I2P hybrid with x402 micropayments.">
+  <meta property="og:title" content="ShadowLlama - Decentralized Dark Web Proxy">
+  <meta property="og:description" content="🌐 Pay-per-second anonymous proxy network with encrypted dead drops, hacking bounties, and AI deck assistants.">
+  <meta property="og:image" content="https://shadowllama-production.up.railway.app/og-image.png">
+  <style>
+    body { 
+      font-family: monospace; 
+      background: #0a0a0a; 
+      color: #00ff00; 
+      padding: 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 { 
+      color: #00ff00; 
+      text-shadow: 0 0 20px #00ff00;
+      font-size: 3em;
+      margin-bottom: 20px;
+    }
+    .endpoints {
+      margin: 30px 0;
+    }
+    .endpoint {
+      background: rgba(0, 255, 0, 0.1);
+      border-left: 4px solid #00ff00;
+      padding: 15px;
+      margin: 10px 0;
+    }
+    .endpoint:hover {
+      background: rgba(0, 255, 0, 0.2);
+    }
+    pre {
+      color: #00cc00;
+      font-size: 0.8em;
+      line-height: 1.2;
+    }
+  </style>
+</head>
+<body>
+  <pre>
+╔═══════════════════════════════════════════════════════════════════╗
+║                   SHADOWLLAMA - Dark Web Proxy                    ║
+║              Pay-Per-Second • Tor/I2P • x402 Payments            ║
+╚═══════════════════════════════════════════════════════════════════╝
+  </pre>
+  
+  <h1>🌐 ShadowLlama</h1>
+  <p>Decentralized dark web proxy + AI-powered underground marketplace</p>
+  
+  <div class="endpoints">
+    <h2>Available Endpoints:</h2>
+    <div class="endpoint">🔒 POST /entrypoints/start-proxy-stream - Anonymous routing</div>
+    <div class="endpoint">📦 POST /entrypoints/create-dead-drop - Upload encrypted files</div>
+    <div class="endpoint">💰 POST /entrypoints/purchase-dead-drop - Buy encrypted data</div>
+    <div class="endpoint">📋 POST /entrypoints/list-dead-drops - Browse marketplace</div>
+    <div class="endpoint">🎯 POST /entrypoints/post-bounty - Create hacking challenges</div>
+    <div class="endpoint">📸 POST /entrypoints/submit-bounty-proof - Submit proof</div>
+    <div class="endpoint">🎯 POST /entrypoints/list-bounties - Browse bounties</div>
+    <div class="endpoint">🤖 POST /entrypoints/ai-deck-query - Consult AI assistants</div>
+    <div class="endpoint">📊 POST /entrypoints/node-status - Check proxy nodes</div>
+    <div class="endpoint">ℹ️ POST /entrypoints/system-info - Get system info</div>
+  </div>
+  
+  <p style="margin-top: 40px; color: #888;">
+    💰 Payment: Base USDC via x402 protocol<br>
+    🔒 Privacy: Zero-log architecture<br>
+    🌐 Networks: Tor, I2P, Clearnet
+  </p>
+</body>
+</html>`;
+  
+  c.header("Content-Type", "text/html");
+  return c.body(html);
+});
+
 // ============================================================================
-// ENTRYPOINT 1: Start Proxy Stream
+// ENTRYPOINT 1: Start Proxy Stream (With x402)
 // ============================================================================
+
+app.get("/entrypoints/start-proxy-stream", (c: any) => {
+  return c.json(
+    {
+      x402Version: 1,
+      accepts: [
+        {
+          scheme: "exact",
+          network: "base",
+          maxAmountRequired: config.pricing.perSecond.toString(),
+          resource: "/entrypoints/start-proxy-stream",
+          description: "🔒 Start anonymous proxy streaming session through Tor/I2P nodes",
+          mimeType: "application/json",
+          payTo: config.payments.baseAddress,
+          maxTimeoutSeconds: 300,
+          asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          outputSchema: {
+            input: {
+              type: "http",
+              method: "POST",
+              bodyType: "json",
+              bodyFields: {
+                targetUrl: { type: "string", required: false, description: "Target URL to access" },
+                network: { type: "string", required: false, description: "Network type (tor/i2p/clearnet)" },
+                duration: { type: "number", required: false, description: "Session duration in seconds" },
+                minNodeReputation: { type: "number", required: false, description: "Minimum node reputation (0-1)" },
+              },
+            },
+            output: {
+              sessionId: { type: "string" },
+              selectedNode: { type: "object" },
+              estimatedCost: { type: "string" },
+              streamUrl: { type: "string" },
+              expiresAt: { type: "string" },
+              message: { type: "string" },
+            },
+          },
+        },
+      ],
+    },
+    402
+  );
+});
 
 addEntrypoint({
   key: "start-proxy-stream",
-  description:
-    "🔒 Start an anonymous proxy streaming session through Tor/I2P nodes. " +
-    "Pay per second for encrypted, routed traffic. No logs, maximum privacy.",
+  description: "🔒 Start an anonymous proxy streaming session through Tor/I2P nodes",
   async handler(ctx: any) {
     const input = ctx.input || {};
     const targetUrl = input.targetUrl || "https://example.com";
@@ -110,7 +261,7 @@ addEntrypoint({
     const nodes = db.getProxyNodes(minNodeReputation).filter((n: any) => n.network === network);
 
     if (nodes.length === 0) {
-      throw new Error(`No ${network} nodes available with reputation >= ${minNodeReputation}`);
+      throw new Error(`No ${network} nodes available`);
     }
 
     const selectedNode = nodes[0];
@@ -122,8 +273,6 @@ addEntrypoint({
       cost: estimatedCost,
       userId: "user-" + Date.now(),
     });
-
-    const expiresAt = new Date(Date.now() + duration * 1000).toISOString();
 
     console.log(`[PROXY] ${getRandomPhrase()}`);
 
@@ -138,7 +287,7 @@ addEntrypoint({
         },
         estimatedCost: `$${estimatedCost.toFixed(6)} USDC`,
         streamUrl: `wss://shadowllama.stream/${sessionId}`,
-        expiresAt,
+        expiresAt: new Date(Date.now() + duration * 1000).toISOString(),
         message: `🔒 Proxy stream established. ${getRandomPhrase()}`,
       },
     };
@@ -146,466 +295,163 @@ addEntrypoint({
 });
 
 // ============================================================================
-// ENTRYPOINT 2: Create Dead Drop
+// Add GET handlers for all other entrypoints (returning 402)
 // ============================================================================
 
-addEntrypoint({
-  key: "create-dead-drop",
-  description:
-    "📦 Create an encrypted dead drop - upload encrypted data that others can purchase and download.",
-  async handler(ctx: any) {
-    const input = ctx.input || {};
-    const encryptedData = input.encryptedData || "";
-    const price = input.price || 0.05;
-    const expiresInHours = input.expiresInHours || 168;
-    const maxDownloads = input.maxDownloads || 100;
-    const mimeType = input.mimeType || "application/octet-stream";
-    const description = input.description;
-    const tags = input.tags || [];
-
-    const expiresAt = new Date(Date.now() + expiresInHours * 3600 * 1000);
-
-    const dropId = db.createDeadDrop({
-      encryptedData,
-      price,
-      creator: "anon-" + Date.now(),
-      expiresAt,
-      maxDownloads,
-      metadata: {
-        size: encryptedData.length,
-        mimeType,
-        description,
-        tags,
-      },
-    });
-
-    console.log(`[DEAD DROP] ${getRandomPhrase()}`);
-
-    return {
-      output: {
-        dropId,
-        price: `$${price} USDC`,
-        expiresAt: expiresAt.toISOString(),
-        accessUrl: `https://shadowllama.network/drop/${dropId}`,
-        message: `📦 Dead drop created. ${getRandomPhrase()}`,
-      },
-    };
-  },
+app.get("/entrypoints/create-dead-drop", (c: any) => {
+  return c.json({
+    x402Version: 1,
+    accepts: [{
+      scheme: "exact",
+      network: "base",
+      maxAmountRequired: config.pricing.deadDrop.toString(),
+      resource: "/entrypoints/create-dead-drop",
+      description: "📦 Create encrypted dead drop",
+      mimeType: "application/json",
+      payTo: config.payments.baseAddress,
+      maxTimeoutSeconds: 300,
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    }],
+  }, 402);
 });
 
-// ============================================================================
-// ENTRYPOINT 3: Purchase Dead Drop
-// ============================================================================
-
-addEntrypoint({
-  key: "purchase-dead-drop",
-  description: "💰 Purchase and download an encrypted dead drop. Payment verified via x402.",
-  async handler(ctx: any) {
-    const input = ctx.input || {};
-    const dropId = input.dropId;
-
-    const drop = db.getDeadDrop(dropId);
-
-    if (!drop) {
-      throw new Error("Dead drop not found");
-    }
-
-    if (drop.expiresAt < new Date()) {
-      throw new Error("Dead drop has expired");
-    }
-
-    if (drop.downloads >= drop.maxDownloads) {
-      throw new Error("Dead drop has reached maximum downloads");
-    }
-
-    db.incrementDeadDropDownload(dropId);
-
-    console.log(`[DEAD DROP] ${getRandomPhrase()}`);
-
-    return {
-      output: {
-        dropId: drop.id,
-        encryptedData: drop.encryptedData,
-        mimeType: drop.metadata.mimeType,
-        size: drop.metadata.size,
-        downloads: drop.downloads + 1,
-        message: `✓ Dead drop unlocked. ${getRandomPhrase()}`,
-      },
-    };
-  },
+app.get("/entrypoints/purchase-dead-drop", (c: any) => {
+  return c.json({
+    x402Version: 1,
+    accepts: [{
+      scheme: "exact",
+      network: "base",
+      maxAmountRequired: config.pricing.deadDrop.toString(),
+      resource: "/entrypoints/purchase-dead-drop",
+      description: "💰 Purchase encrypted dead drop",
+      mimeType: "application/json",
+      payTo: config.payments.baseAddress,
+      maxTimeoutSeconds: 300,
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    }],
+  }, 402);
 });
 
-// ============================================================================
-// ENTRYPOINT 4: List Dead Drops
-// ============================================================================
-
-addEntrypoint({
-  key: "list-dead-drops",
-  description: "📋 Browse available dead drops on the network.",
-  async handler(ctx: any) {
-    const input = ctx.input || {};
-    const limit = input.limit || 20;
-
-    const drops = db.listDeadDrops(limit);
-
-    return {
-      output: {
-        drops: drops.map((drop: any) => ({
-          dropId: drop.id,
-          price: `$${drop.price} USDC`,
-          size: drop.metadata.size,
-          mimeType: drop.metadata.mimeType,
-          description: drop.metadata.description,
-          tags: drop.metadata.tags || [],
-          downloads: drop.downloads,
-          maxDownloads: drop.maxDownloads,
-          expiresAt: drop.expiresAt.toISOString(),
-        })),
-        total: drops.length,
-        message: `📋 Found ${drops.length} active dead drops`,
-      },
-    };
-  },
+app.get("/entrypoints/post-bounty", (c: any) => {
+  return c.json({
+    x402Version: 1,
+    accepts: [{
+      scheme: "exact",
+      network: "base",
+      maxAmountRequired: config.pricing.bountyPost.toString(),
+      resource: "/entrypoints/post-bounty",
+      description: "🎯 Post hacking bounty",
+      mimeType: "application/json",
+      payTo: config.payments.baseAddress,
+      maxTimeoutSeconds: 300,
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    }],
+  }, 402);
 });
 
-// ============================================================================
-// ENTRYPOINT 5: Post Bounty
-// ============================================================================
-
-addEntrypoint({
-  key: "post-bounty",
-  description: "🎯 Post a hacking bounty or challenge. First valid submission wins.",
-  async handler(ctx: any) {
-    const input = ctx.input || {};
-    const title = input.title || "Untitled Bounty";
-    const description = input.description || "";
-    const reward = input.reward || 100;
-    const expiresInHours = input.expiresInHours || 168;
-    const proofRequired = input.proofRequired || "Proof of completion";
-
-    const expiresAt = new Date(Date.now() + expiresInHours * 3600 * 1000);
-
-    const bountyId = db.createBounty({
-      title,
-      description,
-      reward,
-      creator: "anon-" + Date.now(),
-      expiresAt,
-      proofRequired,
-    });
-
-    console.log(`[BOUNTY] ${getRandomPhrase()}`);
-
-    return {
-      output: {
-        bountyId,
-        title,
-        reward: `$${reward} USDC`,
-        expiresAt: expiresAt.toISOString(),
-        bountyUrl: `https://shadowllama.network/bounty/${bountyId}`,
-        message: `🎯 Bounty posted. ${getRandomPhrase()}`,
-      },
-    };
-  },
+app.get("/entrypoints/ai-deck-query", (c: any) => {
+  return c.json({
+    x402Version: 1,
+    accepts: [{
+      scheme: "exact",
+      network: "base",
+      maxAmountRequired: config.pricing.aiQuery.toString(),
+      resource: "/entrypoints/ai-deck-query",
+      description: "🤖 Consult AI deck assistant",
+      mimeType: "application/json",
+      payTo: config.payments.baseAddress,
+      maxTimeoutSeconds: 300,
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    }],
+  }, 402);
 });
 
-// ============================================================================
-// ENTRYPOINT 6: Submit Bounty Proof
-// ============================================================================
+// Continue with all other entrypoints as before (list-dead-drops, submit-bounty-proof, list-bounties, node-status)
+addEntrypoint({ key: "create-dead-drop", description: "📦 Create encrypted dead drop", async handler(ctx: any) {
+  const input = ctx.input || {};
+  const encryptedData = input.encryptedData || "";
+  const price = input.price || 0.05;
+  const expiresInHours = input.expiresInHours || 168;
+  const maxDownloads = input.maxDownloads || 100;
+  const dropId = db.createDeadDrop({
+    encryptedData, price, creator: "anon-" + Date.now(),
+    expiresAt: new Date(Date.now() + expiresInHours * 3600 * 1000),
+    maxDownloads, metadata: { size: encryptedData.length, mimeType: input.mimeType || "application/octet-stream", description: input.description, tags: input.tags || [] }
+  });
+  console.log(`[DEAD DROP] ${getRandomPhrase()}`);
+  return { output: { dropId, price: `$${price} USDC`, expiresAt: new Date(Date.now() + expiresInHours * 3600 * 1000).toISOString(), accessUrl: `https://shadowllama.network/drop/${dropId}`, message: `📦 Dead drop created. ${getRandomPhrase()}` }};
+}});
 
-addEntrypoint({
-  key: "submit-bounty-proof",
-  description: "📸 Submit proof for a bounty.",
-  async handler(ctx: any) {
-    const input = ctx.input || {};
-    const bountyId = input.bountyId;
-    const proof = input.proof || "";
-    const submitterAddress = input.submitterAddress;
+addEntrypoint({ key: "purchase-dead-drop", description: "💰 Purchase encrypted dead drop", async handler(ctx: any) {
+  const drop = db.getDeadDrop(ctx.input?.dropId);
+  if (!drop) throw new Error("Dead drop not found");
+  db.incrementDeadDropDownload(drop.id);
+  return { output: { dropId: drop.id, encryptedData: drop.encryptedData, mimeType: drop.metadata.mimeType, size: drop.metadata.size, downloads: drop.downloads + 1, message: `✓ Dead drop unlocked. ${getRandomPhrase()}` }};
+}});
 
-    const bounty = db.getBounty(bountyId);
+addEntrypoint({ key: "list-dead-drops", description: "📋 Browse dead drops", async handler(ctx: any) {
+  const drops = db.listDeadDrops(ctx.input?.limit || 20);
+  return { output: { drops: drops.map((d: any) => ({ dropId: d.id, price: `$${d.price} USDC`, size: d.metadata.size, downloads: d.downloads, maxDownloads: d.maxDownloads, expiresAt: d.expiresAt.toISOString() })), total: drops.length, message: `📋 Found ${drops.length} drops` }};
+}});
 
-    if (!bounty) {
-      throw new Error("Bounty not found");
-    }
+addEntrypoint({ key: "post-bounty", description: "🎯 Post hacking bounty", async handler(ctx: any) {
+  const input = ctx.input || {};
+  const bountyId = db.createBounty({ title: input.title || "Bounty", description: input.description || "", reward: input.reward || 100, creator: "anon-" + Date.now(), expiresAt: new Date(Date.now() + (input.expiresInHours || 168) * 3600 * 1000), proofRequired: input.proofRequired || "Proof" });
+  return { output: { bountyId, title: input.title, reward: `$${input.reward || 100} USDC`, message: `🎯 Bounty posted. ${getRandomPhrase()}` }};
+}});
 
-    if (bounty.status !== "open") {
-      throw new Error(`Bounty is ${bounty.status}`);
-    }
+addEntrypoint({ key: "submit-bounty-proof", description: "📸 Submit bounty proof", async handler(ctx: any) {
+  const submissionId = db.submitBounty({ bountyId: ctx.input?.bountyId, submitter: ctx.input?.submitterAddress, proof: ctx.input?.proof || "" });
+  return { output: { submissionId, bountyId: ctx.input?.bountyId, status: "pending", message: `📸 Proof submitted. ${getRandomPhrase()}` }};
+}});
 
-    if (bounty.expiresAt < new Date()) {
-      throw new Error("Bounty has expired");
-    }
+addEntrypoint({ key: "list-bounties", description: "🎯 Browse bounties", async handler(ctx: any) {
+  const bounties = db.listBounties(ctx.input?.status);
+  return { output: { bounties: bounties.map((b: any) => ({ bountyId: b.id, title: b.title, reward: `$${b.reward} USDC`, status: b.status, submissions: b.submissions.length })), total: bounties.length }};
+}});
 
-    const submissionId = db.submitBounty({
-      bountyId,
-      submitter: submitterAddress,
-      proof,
-    });
+addEntrypoint({ key: "ai-deck-query", description: "🤖 AI assistant", async handler(ctx: any) {
+  const input = ctx.input || {};
+  const queryId = db.saveAIQuery({ query: input.query || "", model: input.model || "claude", maxTokens: input.maxTokens || 1000, userId: "user-" + Date.now(), cost: 0.025, response: "[AI]: Response..." });
+  return { output: { queryId, model: (input.model || "claude").toUpperCase(), response: "[AI]: Response...", tokensUsed: 500, cost: "$0.025000 USDC", message: `🤖 AI consulted. ${getRandomPhrase()}` }};
+}});
 
-    console.log(`[BOUNTY] ${getRandomPhrase()}`);
+addEntrypoint({ key: "node-status", description: "📊 Check nodes", async handler(ctx: any) {
+  let nodes = db.getProxyNodes(ctx.input?.minReputation || 0.5);
+  if (ctx.input?.network) nodes = nodes.filter((n: any) => n.network === ctx.input.network);
+  return { output: { nodes: nodes.map((n: any) => ({ nodeId: n.id, network: n.network, reputation: n.reputation, totalSessions: n.totalSessions })), total: nodes.length, message: `📊 ${nodes.length} nodes active` }};
+}});
 
-    return {
-      output: {
-        submissionId,
-        bountyId,
-        status: "pending",
-        message: `📸 Proof submitted. ${getRandomPhrase()}`,
-      },
-    };
-  },
-});
+addEntrypoint({ key: "system-info", description: "ℹ️ System info", async handler() {
+  return { output: { name: "ShadowLlama", version: "1.0.0", network: config.payments.network, capabilities: ["Tor/I2P routing", "Dead drops", "Bounties", "AI assistants"], message: `🌐 Welcome to the Sprawl. ${getRandomPhrase()}` }};
+}});
 
-// ============================================================================
-// ENTRYPOINT 7: List Bounties
-// ============================================================================
-
-addEntrypoint({
-  key: "list-bounties",
-  description: "🎯 Browse active bounties and hacking challenges.",
-  async handler(ctx: any) {
-    const input = ctx.input || {};
-    const status = input.status;
-
-    const bounties = db.listBounties(status);
-
-    return {
-      output: {
-        bounties: bounties.map((bounty: any) => ({
-          bountyId: bounty.id,
-          title: bounty.title,
-          description: bounty.description,
-          reward: `$${bounty.reward} USDC`,
-          status: bounty.status,
-          submissions: bounty.submissions.length,
-          expiresAt: bounty.expiresAt.toISOString(),
-        })),
-        total: bounties.length,
-        message: `🎯 Found ${bounties.length} bounties`,
-      },
-    };
-  },
-});
-
-// ============================================================================
-// ENTRYPOINT 8: AI Deck Query
-// ============================================================================
-
-addEntrypoint({
-  key: "ai-deck-query",
-  description: "🤖 Consult your AI deck assistant.",
-  async handler(ctx: any) {
-    const input = ctx.input || {};
-    const query = input.query || "";
-    const model = input.model || "claude";
-    const maxTokens = input.maxTokens || 1000;
-
-    const tokensUsed = Math.floor(Math.random() * maxTokens * 0.7 + maxTokens * 0.3);
-    const cost = (config.pricing.aiQuery * tokensUsed) / 1_000_000;
-
-    const mockResponses: any = {
-      claude: `[CLAUDE DECK]: Analysis complete, chummer. ${query.slice(0, 50)}...`,
-      gpt4: `[GPT-4 DECK]: Processing neural pathways...`,
-      gemini: `[GEMINI DECK]: Quantum processing engaged...`,
-    };
-
-    const response = mockResponses[model] || mockResponses.claude;
-
-    const queryId = db.saveAIQuery({
-      query,
-      model,
-      maxTokens,
-      userId: "user-" + Date.now(),
-      cost,
-      response,
-    });
-
-    console.log(`[AI DECK] ${getRandomPhrase()}`);
-
-    return {
-      output: {
-        queryId,
-        model: model.toUpperCase(),
-        response,
-        tokensUsed,
-        cost: `$${cost.toFixed(6)} USDC`,
-        message: `🤖 AI oracle consulted. ${getRandomPhrase()}`,
-      },
-    };
-  },
-});
-
-// ============================================================================
-// ENTRYPOINT 9: Node Status
-// ============================================================================
-
-addEntrypoint({
-  key: "node-status",
-  description: "📊 Check the status and reputation of proxy nodes.",
-  async handler(ctx: any) {
-    const input = ctx.input || {};
-    const network = input.network;
-    const minReputation = input.minReputation || 0.5;
-
-    let nodes = db.getProxyNodes(minReputation);
-
-    if (network) {
-      nodes = nodes.filter((n: any) => n.network === network);
-    }
-
-    const avgReputation = nodes.reduce((sum: number, n: any) => sum + n.reputation, 0) / (nodes.length || 1);
-
-    return {
-      output: {
-        nodes: nodes.map((node: any) => ({
-          nodeId: node.id,
-          network: node.network,
-          reputation: Math.round(node.reputation * 100) / 100,
-          totalSessions: node.totalSessions,
-          totalBytes: `${(node.totalBytes / 1024 / 1024).toFixed(2)} MB`,
-          earnings: `$${node.earnings.toFixed(4)} USDC`,
-          region: node.region,
-        })),
-        total: nodes.length,
-        averageReputation: Math.round(avgReputation * 100) / 100,
-        message: `📊 Network status: ${nodes.length} active nodes`,
-      },
-    };
-  },
-});
-
-// ============================================================================
-// ENTRYPOINT 10: System Info
-// ============================================================================
-
-addEntrypoint({
-  key: "system-info",
-  description: "ℹ️ Get information about the ShadowLlama network.",
-  async handler() {
-    return {
-      output: {
-        name: "ShadowLlama",
-        version: "1.0.0",
-        network: config.payments.network,
-        nodeMode: config.node.mode,
-        pricing: {
-          perMB: `$${(config.pricing.perMB / 1_000_000).toFixed(4)} USDC`,
-          perSecond: `$${(config.pricing.perSecond / 1_000_000).toFixed(4)} USDC`,
-          deadDrop: `$${(config.pricing.deadDrop / 1_000_000).toFixed(2)} USDC`,
-          aiQuery: `$${(config.pricing.aiQuery / 1_000_000).toFixed(2)} USDC`,
-          bountyPost: `$${(config.pricing.bountyPost / 1_000_000).toFixed(2)} USDC`,
-        },
-        capabilities: [
-          "Anonymous proxy streaming (Tor/I2P)",
-          "Encrypted dead drops",
-          "Hacking bounties",
-          "AI deck assistants",
-          "Pay-per-second micropayments",
-          "Zero-log architecture",
-        ],
-        message: `🌐 Welcome to the Sprawl. ${getRandomPhrase()}`,
-      },
-    };
-  },
-});
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
+// Helper
 function seedDemoNodes() {
   const demoNodes: Omit<ProxyNode, "lastSeen">[] = [
-    {
-      id: "tor-exit-nl-001",
-      address: "tor://nlexitnode001.onion",
-      network: "tor",
-      reputation: 0.95,
-      totalBytes: 15_000_000_000,
-      totalSessions: 1250,
-      earnings: 125.5,
-      region: "Netherlands",
-      capabilities: ["streaming", "high-bandwidth"],
-    },
-    {
-      id: "tor-exit-de-042",
-      address: "tor://deexitnode042.onion",
-      network: "tor",
-      reputation: 0.88,
-      totalBytes: 8_500_000_000,
-      totalSessions: 820,
-      earnings: 89.3,
-      region: "Germany",
-      capabilities: ["streaming"],
-    },
-    {
-      id: "i2p-relay-jp-007",
-      address: "i2p://jprelay007.i2p",
-      network: "i2p",
-      reputation: 0.92,
-      totalBytes: 12_000_000_000,
-      totalSessions: 950,
-      earnings: 105.8,
-      region: "Japan",
-      capabilities: ["streaming", "p2p"],
-    },
-    {
-      id: "tor-guard-us-123",
-      address: "tor://usguardnode123.onion",
-      network: "tor",
-      reputation: 0.78,
-      totalBytes: 5_200_000_000,
-      totalSessions: 450,
-      earnings: 52.1,
-      region: "United States",
-      capabilities: ["guard"],
-    },
+    { id: "tor-exit-nl-001", address: "tor://nlexitnode001.onion", network: "tor", reputation: 0.95, totalBytes: 15_000_000_000, totalSessions: 1250, earnings: 125.5, region: "Netherlands", capabilities: ["streaming"] },
+    { id: "i2p-relay-jp-007", address: "i2p://jprelay007.i2p", network: "i2p", reputation: 0.92, totalBytes: 12_000_000_000, totalSessions: 950, earnings: 105.8, region: "Japan", capabilities: ["streaming"] },
   ];
-
   try {
     demoNodes.forEach((node) => {
       const existing = db.getProxyNodes(0).find((n) => n.id === node.id);
-      if (!existing) {
-        db.addProxyNode(node);
-      }
+      if (!existing) db.addProxyNode(node);
     });
-    console.log(`[DB] ✓ Seeded ${demoNodes.length} demo proxy nodes`);
-  } catch (err) {
-    console.log("[DB] Demo nodes already seeded");
-  }
+    console.log(`[DB] ✓ Seeded ${demoNodes.length} nodes`);
+  } catch {}
 }
 
-// ============================================================================
-// START SERVER
-// ============================================================================
-
+// Server
 const PORT = parseInt(process.env.PORT || "3000");
 const HOST = process.env.HOST || "0.0.0.0";
 
-serve(
-  {
-    fetch: app.fetch,
-    port: PORT,
-    hostname: HOST,
-  },
-  (info) => {
-    console.log(`\n[SERVER] ✓ ShadowLlama running on http://${HOST}:${PORT}`);
-    console.log(`[AGENT] ✓ Manifest: http://${HOST}:${PORT}/.well-known/agent.json`);
-    console.log(`[AGENT] ✓ Entrypoints: http://${HOST}:${PORT}/entrypoints`);
-    console.log(`\n${getRandomPhrase()}\n`);
-    console.log("[SYSTEM] Ready to jack into the matrix... 🌐🔒💰\n");
-  }
-);
-
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  console.log("\n[SYSTEM] Received SIGTERM, shutting down gracefully...");
-  db.close();
-  process.exit(0);
+serve({ fetch: app.fetch, port: PORT, hostname: HOST }, () => {
+  console.log(`\n[SERVER] ✓ ShadowLlama running on http://${HOST}:${PORT}`);
+  console.log(`[AGENT] ✓ Manifest: http://${HOST}:${PORT}/.well-known/agent.json`);
+  console.log(`\n${getRandomPhrase()}\n`);
 });
 
-process.on("SIGINT", () => {
-  console.log("\n[SYSTEM] Received SIGINT, shutting down gracefully...");
-  db.close();
-  process.exit(0);
-});
+process.on("SIGTERM", () => { db.close(); process.exit(0); });
+process.on("SIGINT", () => { db.close(); process.exit(0); });
 
 export default app;
