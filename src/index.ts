@@ -29,17 +29,12 @@ seedDemoNodes();
 // CREATE AGENT APP
 // ============================================================================
 
-const { app, addEntrypoint, config: agentConfig } = createAgentApp(
+const { app, addEntrypoint } = createAgentApp(
   {
     name: "shadowllama-agent",
     version: "1.0.0",
     description:
       "🌐 Decentralized pay-per-second dark web proxy + AI-powered underground marketplace. Tor/I2P hybrid with x402 micropayments.",
-    instructions:
-      "ShadowLlama is a cyberpunk-themed decentralized proxy network where every byte costs crypto. " +
-      "Users pay per second for anonymous routing through Tor/I2P nodes, access AI oracles, " +
-      "post bounties for hacking challenges, and trade in encrypted dead drops. " +
-      "All payments are instant via x402 protocol. Zero logs, maximum privacy.",
   },
   {
     defaultPrice: config.pricing.perSecond.toString(),
@@ -93,7 +88,14 @@ addEntrypoint({
     expiresAt: z.string(),
     message: z.string(),
   }),
-  async handler(input) {
+  async handler(ctx) {
+    const input = ctx.input as {
+      targetUrl: string;
+      network: "tor" | "i2p" | "clearnet";
+      duration: number;
+      minNodeReputation: number;
+    };
+
     const { targetUrl, network, duration, minNodeReputation } = input;
 
     // Get available nodes
@@ -123,17 +125,19 @@ addEntrypoint({
     console.log(`[PROXY] Session ${sessionId} started via node ${selectedNode.id}`);
 
     return {
-      sessionId,
-      selectedNode: {
-        id: selectedNode.id,
-        network: selectedNode.network,
-        reputation: selectedNode.reputation,
-        region: selectedNode.region,
+      output: {
+        sessionId,
+        selectedNode: {
+          id: selectedNode.id,
+          network: selectedNode.network,
+          reputation: selectedNode.reputation,
+          region: selectedNode.region,
+        },
+        estimatedCost: `$${estimatedCost.toFixed(6)} USDC`,
+        streamUrl: `wss://shadowllama.stream/${sessionId}`,
+        expiresAt,
+        message: `🔒 Proxy stream established. ${getRandomPhrase()}`,
       },
-      estimatedCost: `$${estimatedCost.toFixed(6)} USDC`,
-      streamUrl: `wss://shadowllama.stream/${sessionId}`,
-      expiresAt,
-      message: `🔒 Proxy stream established. ${getRandomPhrase()}`,
     };
   },
 });
@@ -163,9 +167,18 @@ addEntrypoint({
     accessUrl: z.string(),
     message: z.string(),
   }),
-  async handler(input) {
-    const { encryptedData, price, expiresInHours, maxDownloads, mimeType, description, tags } =
-      input;
+  async handler(ctx) {
+    const input = ctx.input as {
+      encryptedData: string;
+      price: number;
+      expiresInHours: number;
+      maxDownloads: number;
+      mimeType: string;
+      description?: string;
+      tags?: string[];
+    };
+
+    const { encryptedData, price, expiresInHours, maxDownloads, mimeType, description, tags } = input;
 
     // Calculate expiration
     const expiresAt = new Date(Date.now() + expiresInHours * 3600 * 1000);
@@ -189,11 +202,13 @@ addEntrypoint({
     console.log(`[DEAD DROP] Created drop ${dropId} - Price: $${price} USDC`);
 
     return {
-      dropId,
-      price: `$${price} USDC`,
-      expiresAt: expiresAt.toISOString(),
-      accessUrl: `https://shadowllama.network/drop/${dropId}`,
-      message: `📦 Dead drop created. ${getRandomPhrase()}`,
+      output: {
+        dropId,
+        price: `$${price} USDC`,
+        expiresAt: expiresAt.toISOString(),
+        accessUrl: `https://shadowllama.network/drop/${dropId}`,
+        message: `📦 Dead drop created. ${getRandomPhrase()}`,
+      },
     };
   },
 });
@@ -217,7 +232,8 @@ addEntrypoint({
     downloads: z.number(),
     message: z.string(),
   }),
-  async handler(input) {
+  async handler(ctx) {
+    const input = ctx.input as { dropId: string };
     const { dropId } = input;
 
     const drop = db.getDeadDrop(dropId);
@@ -241,12 +257,14 @@ addEntrypoint({
     console.log(`[DEAD DROP] Drop ${dropId} purchased and unlocked`);
 
     return {
-      dropId: drop.id,
-      encryptedData: drop.encryptedData,
-      mimeType: drop.metadata.mimeType,
-      size: drop.metadata.size,
-      downloads: drop.downloads + 1,
-      message: `✓ Dead drop unlocked. ${getRandomPhrase()}`,
+      output: {
+        dropId: drop.id,
+        encryptedData: drop.encryptedData,
+        mimeType: drop.metadata.mimeType,
+        size: drop.metadata.size,
+        downloads: drop.downloads + 1,
+        message: `✓ Dead drop unlocked. ${getRandomPhrase()}`,
+      },
     };
   },
 });
@@ -278,25 +296,28 @@ addEntrypoint({
     total: z.number(),
     message: z.string(),
   }),
-  async handler(input) {
+  async handler(ctx) {
+    const input = ctx.input as { limit: number };
     const { limit } = input;
 
     const drops = db.listDeadDrops(limit);
 
     return {
-      drops: drops.map((drop) => ({
-        dropId: drop.id,
-        price: `$${drop.price} USDC`,
-        size: drop.metadata.size,
-        mimeType: drop.metadata.mimeType,
-        description: drop.metadata.description,
-        tags: drop.metadata.tags || [],
-        downloads: drop.downloads,
-        maxDownloads: drop.maxDownloads,
-        expiresAt: drop.expiresAt.toISOString(),
-      })),
-      total: drops.length,
-      message: `📋 Found ${drops.length} active dead drops`,
+      output: {
+        drops: drops.map((drop) => ({
+          dropId: drop.id,
+          price: `$${drop.price} USDC`,
+          size: drop.metadata.size,
+          mimeType: drop.metadata.mimeType,
+          description: drop.metadata.description,
+          tags: drop.metadata.tags || [],
+          downloads: drop.downloads,
+          maxDownloads: drop.maxDownloads,
+          expiresAt: drop.expiresAt.toISOString(),
+        })),
+        total: drops.length,
+        message: `📋 Found ${drops.length} active dead drops`,
+      },
     };
   },
 });
@@ -327,7 +348,15 @@ addEntrypoint({
     bountyUrl: z.string(),
     message: z.string(),
   }),
-  async handler(input) {
+  async handler(ctx) {
+    const input = ctx.input as {
+      title: string;
+      description: string;
+      reward: number;
+      expiresInHours: number;
+      proofRequired: string;
+    };
+
     const { title, description, reward, expiresInHours, proofRequired } = input;
 
     const expiresAt = new Date(Date.now() + expiresInHours * 3600 * 1000);
@@ -345,12 +374,14 @@ addEntrypoint({
     console.log(`[BOUNTY] Posted bounty ${bountyId} - Reward: $${reward} USDC`);
 
     return {
-      bountyId,
-      title,
-      reward: `$${reward} USDC`,
-      expiresAt: expiresAt.toISOString(),
-      bountyUrl: `https://shadowllama.network/bounty/${bountyId}`,
-      message: `🎯 Bounty posted. Netrunners are mobilizing... ${getRandomPhrase()}`,
+      output: {
+        bountyId,
+        title,
+        reward: `$${reward} USDC`,
+        expiresAt: expiresAt.toISOString(),
+        bountyUrl: `https://shadowllama.network/bounty/${bountyId}`,
+        message: `🎯 Bounty posted. Netrunners are mobilizing... ${getRandomPhrase()}`,
+      },
     };
   },
 });
@@ -373,7 +404,13 @@ addEntrypoint({
     status: z.string(),
     message: z.string(),
   }),
-  async handler(input) {
+  async handler(ctx) {
+    const input = ctx.input as {
+      bountyId: string;
+      proof: string;
+      submitterAddress: string;
+    };
+
     const { bountyId, proof, submitterAddress } = input;
 
     const bounty = db.getBounty(bountyId);
@@ -400,10 +437,12 @@ addEntrypoint({
     console.log(`[BOUNTY] Submission ${submissionId} received for bounty ${bountyId}`);
 
     return {
-      submissionId,
-      bountyId,
-      status: "pending",
-      message: `📸 Proof submitted. Awaiting verification... ${getRandomPhrase()}`,
+      output: {
+        submissionId,
+        bountyId,
+        status: "pending",
+        message: `📸 Proof submitted. Awaiting verification... ${getRandomPhrase()}`,
+      },
     };
   },
 });
@@ -433,23 +472,26 @@ addEntrypoint({
     total: z.number(),
     message: z.string(),
   }),
-  async handler(input) {
+  async handler(ctx) {
+    const input = ctx.input as { status?: string };
     const { status } = input;
 
     const bounties = db.listBounties(status);
 
     return {
-      bounties: bounties.map((bounty) => ({
-        bountyId: bounty.id,
-        title: bounty.title,
-        description: bounty.description,
-        reward: `$${bounty.reward} USDC`,
-        status: bounty.status,
-        submissions: bounty.submissions.length,
-        expiresAt: bounty.expiresAt.toISOString(),
-      })),
-      total: bounties.length,
-      message: `🎯 Found ${bounties.length} bounties`,
+      output: {
+        bounties: bounties.map((bounty) => ({
+          bountyId: bounty.id,
+          title: bounty.title,
+          description: bounty.description,
+          reward: `$${bounty.reward} USDC`,
+          status: bounty.status,
+          submissions: bounty.submissions.length,
+          expiresAt: bounty.expiresAt.toISOString(),
+        })),
+        total: bounties.length,
+        message: `🎯 Found ${bounties.length} bounties`,
+      },
     };
   },
 });
@@ -476,7 +518,13 @@ addEntrypoint({
     cost: z.string(),
     message: z.string(),
   }),
-  async handler(input) {
+  async handler(ctx) {
+    const input = ctx.input as {
+      query: string;
+      model: "claude" | "gpt4" | "gemini";
+      maxTokens: number;
+    };
+
     const { query, model, maxTokens } = input;
 
     // Calculate cost (simplified - real implementation would call actual AI)
@@ -484,7 +532,7 @@ addEntrypoint({
     const cost = (config.pricing.aiQuery * tokensUsed) / 1_000_000;
 
     // Mock AI response (in production, call real AI APIs)
-    const mockResponses = {
+    const mockResponses: Record<string, string> = {
       claude: `[CLAUDE DECK]: Analysis complete, chummer. ${query} requires careful consideration. The data suggests...`,
       gpt4: `[GPT-4 DECK]: Processing neural pathways... Query resolved. Based on shadow net intel...`,
       gemini: `[GEMINI DECK]: Quantum processing engaged. Your query about ${query.slice(0, 30)}... yielding results...`,
@@ -505,12 +553,14 @@ addEntrypoint({
     console.log(`[AI DECK] Query ${queryId} processed by ${model.toUpperCase()}`);
 
     return {
-      queryId,
-      model: model.toUpperCase(),
-      response,
-      tokensUsed,
-      cost: `$${cost.toFixed(6)} USDC`,
-      message: `🤖 AI oracle consulted. ${getRandomPhrase()}`,
+      output: {
+        queryId,
+        model: model.toUpperCase(),
+        response,
+        tokensUsed,
+        cost: `$${cost.toFixed(6)} USDC`,
+        message: `🤖 AI oracle consulted. ${getRandomPhrase()}`,
+      },
     };
   },
 });
@@ -542,7 +592,12 @@ addEntrypoint({
     averageReputation: z.number(),
     message: z.string(),
   }),
-  async handler(input) {
+  async handler(ctx) {
+    const input = ctx.input as {
+      network?: "tor" | "i2p" | "clearnet";
+      minReputation: number;
+    };
+
     const { network, minReputation } = input;
 
     let nodes = db.getProxyNodes(minReputation);
@@ -555,18 +610,20 @@ addEntrypoint({
       nodes.reduce((sum, n) => sum + n.reputation, 0) / (nodes.length || 1);
 
     return {
-      nodes: nodes.map((node) => ({
-        nodeId: node.id,
-        network: node.network,
-        reputation: Math.round(node.reputation * 100) / 100,
-        totalSessions: node.totalSessions,
-        totalBytes: `${(node.totalBytes / 1024 / 1024).toFixed(2)} MB`,
-        earnings: `$${node.earnings.toFixed(4)} USDC`,
-        region: node.region,
-      })),
-      total: nodes.length,
-      averageReputation: Math.round(avgReputation * 100) / 100,
-      message: `📊 Network status: ${nodes.length} active nodes`,
+      output: {
+        nodes: nodes.map((node) => ({
+          nodeId: node.id,
+          network: node.network,
+          reputation: Math.round(node.reputation * 100) / 100,
+          totalSessions: node.totalSessions,
+          totalBytes: `${(node.totalBytes / 1024 / 1024).toFixed(2)} MB`,
+          earnings: `$${node.earnings.toFixed(4)} USDC`,
+          region: node.region,
+        })),
+        total: nodes.length,
+        averageReputation: Math.round(avgReputation * 100) / 100,
+        message: `📊 Network status: ${nodes.length} active nodes`,
+      },
     };
   },
 });
@@ -597,26 +654,28 @@ addEntrypoint({
   requiresPayment: false,
   async handler() {
     return {
-      name: "ShadowLlama",
-      version: "1.0.0",
-      network: config.payments.network,
-      nodeMode: config.node.mode,
-      pricing: {
-        perMB: `$${(config.pricing.perMB / 1_000_000).toFixed(4)} USDC`,
-        perSecond: `$${(config.pricing.perSecond / 1_000_000).toFixed(4)} USDC`,
-        deadDrop: `$${(config.pricing.deadDrop / 1_000_000).toFixed(2)} USDC`,
-        aiQuery: `$${(config.pricing.aiQuery / 1_000_000).toFixed(2)} USDC`,
-        bountyPost: `$${(config.pricing.bountyPost / 1_000_000).toFixed(2)} USDC`,
+      output: {
+        name: "ShadowLlama",
+        version: "1.0.0",
+        network: config.payments.network,
+        nodeMode: config.node.mode,
+        pricing: {
+          perMB: `$${(config.pricing.perMB / 1_000_000).toFixed(4)} USDC`,
+          perSecond: `$${(config.pricing.perSecond / 1_000_000).toFixed(4)} USDC`,
+          deadDrop: `$${(config.pricing.deadDrop / 1_000_000).toFixed(2)} USDC`,
+          aiQuery: `$${(config.pricing.aiQuery / 1_000_000).toFixed(2)} USDC`,
+          bountyPost: `$${(config.pricing.bountyPost / 1_000_000).toFixed(2)} USDC`,
+        },
+        capabilities: [
+          "Anonymous proxy streaming (Tor/I2P)",
+          "Encrypted dead drops",
+          "Hacking bounties",
+          "AI deck assistants",
+          "Pay-per-second micropayments",
+          "Zero-log architecture",
+        ],
+        message: `🌐 Welcome to the Sprawl. ${getRandomPhrase()}`,
       },
-      capabilities: [
-        "Anonymous proxy streaming (Tor/I2P)",
-        "Encrypted dead drops",
-        "Hacking bounties",
-        "AI deck assistants",
-        "Pay-per-second micropayments",
-        "Zero-log architecture",
-      ],
-      message: `🌐 Welcome to the Sprawl. ${getRandomPhrase()}`,
     };
   },
 });
