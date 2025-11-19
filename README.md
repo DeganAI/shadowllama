@@ -350,11 +350,7 @@ Set these in your deployment platform:
 - MEV opportunity scanning
 - Market intel trading
 
-## 🏆 Bounty Program
-
-ShadowLlama is built for the **Daydreams AI Agent Bounties**:
-
-- **Issue**: [#7 - Build an Agent](https://github.com/daydreamsai/agent-bounties/issues/7)
+## 🏆 Lucid Agent
 - **Framework**: [@lucid-dreams/agent-kit](https://www.npmjs.com/package/@lucid-dreams/agent-kit)
 - **Protocol**: x402 micropayments
 - **Network**: Base (USDC)
