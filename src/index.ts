@@ -2,7 +2,7 @@
 // ShadowLlama Main Application - Cyberpunk Dark Web Proxy
 
 import { createAgentApp } from "@lucid-dreams/agent-kit";
-import { z } from "zod";
+import type { Hono } from "hono";
 import { config, BANNER, getRandomPhrase } from "./config/index.js";
 import { ShadowLlamaDB } from "./db/index.js";
 import { serve } from "@hono/node-server";
@@ -29,7 +29,7 @@ seedDemoNodes();
 // CREATE AGENT APP
 // ============================================================================
 
-const { app, addEntrypoint } = createAgentApp(
+const { app, addEntrypoint }: { app: Hono; addEntrypoint: any } = createAgentApp(
   {
     name: "shadowllama-agent",
     version: "1.0.0",
@@ -37,7 +37,6 @@ const { app, addEntrypoint } = createAgentApp(
       "🌐 Decentralized pay-per-second dark web proxy + AI-powered underground marketplace. Tor/I2P hybrid with x402 micropayments.",
   },
   {
-    defaultPrice: config.pricing.perSecond.toString(),
     payToAddress: config.payments.baseAddress,
     network: config.payments.network as "base",
     facilitatorUrl: config.payments.facilitatorUrl,
@@ -53,65 +52,22 @@ addEntrypoint({
   description:
     "🔒 Start an anonymous proxy streaming session through Tor/I2P nodes. " +
     "Pay per second for encrypted, routed traffic. No logs, maximum privacy.",
-  inputSchema: z.object({
-    targetUrl: z
-      .string()
-      .url()
-      .describe("The destination URL to access through the proxy"),
-    network: z
-      .enum(["tor", "i2p", "clearnet"])
-      .default("tor")
-      .describe("Anonymity network to use"),
-    duration: z
-      .number()
-      .min(1)
-      .max(3600)
-      .default(60)
-      .describe("Streaming duration in seconds (max 1 hour)"),
-    minNodeReputation: z
-      .number()
-      .min(0)
-      .max(1)
-      .default(0.7)
-      .describe("Minimum reputation score for proxy nodes (0-1)"),
-  }),
-  outputSchema: z.object({
-    sessionId: z.string(),
-    selectedNode: z.object({
-      id: z.string(),
-      network: z.string(),
-      reputation: z.number(),
-      region: z.string().optional(),
-    }),
-    estimatedCost: z.string(),
-    streamUrl: z.string(),
-    expiresAt: z.string(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as {
-      targetUrl: string;
-      network: "tor" | "i2p" | "clearnet";
-      duration: number;
-      minNodeReputation: number;
-    };
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const targetUrl = input.targetUrl || "https://example.com";
+    const network = input.network || "tor";
+    const duration = input.duration || 60;
+    const minNodeReputation = input.minNodeReputation || 0.7;
 
-    const { targetUrl, network, duration, minNodeReputation } = input;
-
-    // Get available nodes
-    const nodes = db.getProxyNodes(minNodeReputation).filter((n) => n.network === network);
+    const nodes = db.getProxyNodes(minNodeReputation).filter((n: any) => n.network === network);
 
     if (nodes.length === 0) {
       throw new Error(`No ${network} nodes available with reputation >= ${minNodeReputation}`);
     }
 
-    // Select best node (highest reputation)
     const selectedNode = nodes[0];
-
-    // Calculate cost
     const estimatedCost = (config.pricing.perSecond * duration) / 1_000_000;
 
-    // Create session
     const sessionId = db.createSession({
       nodeId: selectedNode.id,
       bytesTransferred: 0,
@@ -122,7 +78,6 @@ addEntrypoint({
     const expiresAt = new Date(Date.now() + duration * 1000).toISOString();
 
     console.log(`[PROXY] ${getRandomPhrase()}`);
-    console.log(`[PROXY] Session ${sessionId} started via node ${selectedNode.id}`);
 
     return {
       output: {
@@ -149,41 +104,19 @@ addEntrypoint({
 addEntrypoint({
   key: "create-dead-drop",
   description:
-    "📦 Create an encrypted dead drop - upload encrypted data that others can purchase and download. " +
-    "Perfect for whistleblowing, data leaks, or secure file sharing.",
-  inputSchema: z.object({
-    encryptedData: z.string().describe("Base64 encoded encrypted data"),
-    price: z.number().min(0).describe("Price in USDC (e.g., 0.50 for $0.50)"),
-    expiresInHours: z.number().min(1).max(720).default(168).describe("Expires in N hours (default 1 week)"),
-    maxDownloads: z.number().min(1).default(100).describe("Maximum number of downloads allowed"),
-    mimeType: z.string().default("application/octet-stream"),
-    description: z.string().optional().describe("Optional description of the drop"),
-    tags: z.array(z.string()).optional().describe("Optional tags for discovery"),
-  }),
-  outputSchema: z.object({
-    dropId: z.string(),
-    price: z.string(),
-    expiresAt: z.string(),
-    accessUrl: z.string(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as {
-      encryptedData: string;
-      price: number;
-      expiresInHours: number;
-      maxDownloads: number;
-      mimeType: string;
-      description?: string;
-      tags?: string[];
-    };
+    "📦 Create an encrypted dead drop - upload encrypted data that others can purchase and download.",
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const encryptedData = input.encryptedData || "";
+    const price = input.price || 0.05;
+    const expiresInHours = input.expiresInHours || 168;
+    const maxDownloads = input.maxDownloads || 100;
+    const mimeType = input.mimeType || "application/octet-stream";
+    const description = input.description;
+    const tags = input.tags || [];
 
-    const { encryptedData, price, expiresInHours, maxDownloads, mimeType, description, tags } = input;
-
-    // Calculate expiration
     const expiresAt = new Date(Date.now() + expiresInHours * 3600 * 1000);
 
-    // Create dead drop
     const dropId = db.createDeadDrop({
       encryptedData,
       price,
@@ -199,7 +132,6 @@ addEntrypoint({
     });
 
     console.log(`[DEAD DROP] ${getRandomPhrase()}`);
-    console.log(`[DEAD DROP] Created drop ${dropId} - Price: $${price} USDC`);
 
     return {
       output: {
@@ -219,22 +151,10 @@ addEntrypoint({
 
 addEntrypoint({
   key: "purchase-dead-drop",
-  description:
-    "💰 Purchase and download an encrypted dead drop. Payment verified via x402 before unlocking data.",
-  inputSchema: z.object({
-    dropId: z.string().describe("The ID of the dead drop to purchase"),
-  }),
-  outputSchema: z.object({
-    dropId: z.string(),
-    encryptedData: z.string(),
-    mimeType: z.string(),
-    size: z.number(),
-    downloads: z.number(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as { dropId: string };
-    const { dropId } = input;
+  description: "💰 Purchase and download an encrypted dead drop. Payment verified via x402.",
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const dropId = input.dropId;
 
     const drop = db.getDeadDrop(dropId);
 
@@ -250,11 +170,9 @@ addEntrypoint({
       throw new Error("Dead drop has reached maximum downloads");
     }
 
-    // Increment downloads
     db.incrementDeadDropDownload(dropId);
 
     console.log(`[DEAD DROP] ${getRandomPhrase()}`);
-    console.log(`[DEAD DROP] Drop ${dropId} purchased and unlocked`);
 
     return {
       output: {
@@ -275,36 +193,16 @@ addEntrypoint({
 
 addEntrypoint({
   key: "list-dead-drops",
-  description: "📋 Browse available dead drops on the network. Discover leaked data, files, and secrets.",
-  inputSchema: z.object({
-    limit: z.number().min(1).max(100).default(20).describe("Number of drops to return"),
-  }),
-  outputSchema: z.object({
-    drops: z.array(
-      z.object({
-        dropId: z.string(),
-        price: z.string(),
-        size: z.number(),
-        mimeType: z.string(),
-        description: z.string().optional(),
-        tags: z.array(z.string()),
-        downloads: z.number(),
-        maxDownloads: z.number(),
-        expiresAt: z.string(),
-      })
-    ),
-    total: z.number(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as { limit: number };
-    const { limit } = input;
+  description: "📋 Browse available dead drops on the network.",
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const limit = input.limit || 20;
 
     const drops = db.listDeadDrops(limit);
 
     return {
       output: {
-        drops: drops.map((drop) => ({
+        drops: drops.map((drop: any) => ({
           dropId: drop.id,
           price: `$${drop.price} USDC`,
           size: drop.metadata.size,
@@ -328,36 +226,14 @@ addEntrypoint({
 
 addEntrypoint({
   key: "post-bounty",
-  description:
-    "🎯 Post a hacking bounty or challenge. Offer rewards for exploits, data breaches, or completing missions. " +
-    "First valid submission wins.",
-  inputSchema: z.object({
-    title: z.string().min(5).max(200).describe("Bounty title"),
-    description: z.string().min(20).describe("Detailed description of the bounty/challenge"),
-    reward: z.number().min(1).describe("Reward in USDC"),
-    expiresInHours: z.number().min(1).max(720).default(168).describe("Time limit in hours"),
-    proofRequired: z
-      .string()
-      .describe("What proof is required (e.g., 'screenshot of admin panel', 'leaked database')"),
-  }),
-  outputSchema: z.object({
-    bountyId: z.string(),
-    title: z.string(),
-    reward: z.string(),
-    expiresAt: z.string(),
-    bountyUrl: z.string(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as {
-      title: string;
-      description: string;
-      reward: number;
-      expiresInHours: number;
-      proofRequired: string;
-    };
-
-    const { title, description, reward, expiresInHours, proofRequired } = input;
+  description: "🎯 Post a hacking bounty or challenge. First valid submission wins.",
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const title = input.title || "Untitled Bounty";
+    const description = input.description || "";
+    const reward = input.reward || 100;
+    const expiresInHours = input.expiresInHours || 168;
+    const proofRequired = input.proofRequired || "Proof of completion";
 
     const expiresAt = new Date(Date.now() + expiresInHours * 3600 * 1000);
 
@@ -371,7 +247,6 @@ addEntrypoint({
     });
 
     console.log(`[BOUNTY] ${getRandomPhrase()}`);
-    console.log(`[BOUNTY] Posted bounty ${bountyId} - Reward: $${reward} USDC`);
 
     return {
       output: {
@@ -380,7 +255,7 @@ addEntrypoint({
         reward: `$${reward} USDC`,
         expiresAt: expiresAt.toISOString(),
         bountyUrl: `https://shadowllama.network/bounty/${bountyId}`,
-        message: `🎯 Bounty posted. Netrunners are mobilizing... ${getRandomPhrase()}`,
+        message: `🎯 Bounty posted. ${getRandomPhrase()}`,
       },
     };
   },
@@ -392,26 +267,12 @@ addEntrypoint({
 
 addEntrypoint({
   key: "submit-bounty-proof",
-  description: "📸 Submit proof for a bounty. If accepted, rewards are paid out automatically via x402.",
-  inputSchema: z.object({
-    bountyId: z.string().describe("The bounty ID to submit proof for"),
-    proof: z.string().describe("Your proof (URL, screenshot, data, etc.)"),
-    submitterAddress: z.string().describe("Your payment address for reward"),
-  }),
-  outputSchema: z.object({
-    submissionId: z.string(),
-    bountyId: z.string(),
-    status: z.string(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as {
-      bountyId: string;
-      proof: string;
-      submitterAddress: string;
-    };
-
-    const { bountyId, proof, submitterAddress } = input;
+  description: "📸 Submit proof for a bounty.",
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const bountyId = input.bountyId;
+    const proof = input.proof || "";
+    const submitterAddress = input.submitterAddress;
 
     const bounty = db.getBounty(bountyId);
 
@@ -420,7 +281,7 @@ addEntrypoint({
     }
 
     if (bounty.status !== "open") {
-      throw new Error(`Bounty is ${bounty.status}, not accepting submissions`);
+      throw new Error(`Bounty is ${bounty.status}`);
     }
 
     if (bounty.expiresAt < new Date()) {
@@ -434,14 +295,13 @@ addEntrypoint({
     });
 
     console.log(`[BOUNTY] ${getRandomPhrase()}`);
-    console.log(`[BOUNTY] Submission ${submissionId} received for bounty ${bountyId}`);
 
     return {
       output: {
         submissionId,
         bountyId,
         status: "pending",
-        message: `📸 Proof submitted. Awaiting verification... ${getRandomPhrase()}`,
+        message: `📸 Proof submitted. ${getRandomPhrase()}`,
       },
     };
   },
@@ -453,34 +313,16 @@ addEntrypoint({
 
 addEntrypoint({
   key: "list-bounties",
-  description: "🎯 Browse active bounties and hacking challenges. Find your next mission.",
-  inputSchema: z.object({
-    status: z.enum(["open", "claimed", "completed", "expired"]).optional().describe("Filter by status"),
-  }),
-  outputSchema: z.object({
-    bounties: z.array(
-      z.object({
-        bountyId: z.string(),
-        title: z.string(),
-        description: z.string(),
-        reward: z.string(),
-        status: z.string(),
-        submissions: z.number(),
-        expiresAt: z.string(),
-      })
-    ),
-    total: z.number(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as { status?: string };
-    const { status } = input;
+  description: "🎯 Browse active bounties and hacking challenges.",
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const status = input.status;
 
     const bounties = db.listBounties(status);
 
     return {
       output: {
-        bounties: bounties.map((bounty) => ({
+        bounties: bounties.map((bounty: any) => ({
           bountyId: bounty.id,
           title: bounty.title,
           description: bounty.description,
@@ -502,43 +344,23 @@ addEntrypoint({
 
 addEntrypoint({
   key: "ai-deck-query",
-  description:
-    "🤖 Consult your AI deck assistant. Ask Claude, GPT-4, or Gemini to navigate the dark web for you. " +
-    "Pay per token used.",
-  inputSchema: z.object({
-    query: z.string().min(5).describe("Your question or command for the AI"),
-    model: z.enum(["claude", "gpt4", "gemini"]).default("claude").describe("Which AI model to use"),
-    maxTokens: z.number().min(100).max(4000).default(1000).describe("Maximum tokens to generate"),
-  }),
-  outputSchema: z.object({
-    queryId: z.string(),
-    model: z.string(),
-    response: z.string(),
-    tokensUsed: z.number(),
-    cost: z.string(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as {
-      query: string;
-      model: "claude" | "gpt4" | "gemini";
-      maxTokens: number;
-    };
+  description: "🤖 Consult your AI deck assistant.",
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const query = input.query || "";
+    const model = input.model || "claude";
+    const maxTokens = input.maxTokens || 1000;
 
-    const { query, model, maxTokens } = input;
-
-    // Calculate cost (simplified - real implementation would call actual AI)
     const tokensUsed = Math.floor(Math.random() * maxTokens * 0.7 + maxTokens * 0.3);
     const cost = (config.pricing.aiQuery * tokensUsed) / 1_000_000;
 
-    // Mock AI response (in production, call real AI APIs)
-    const mockResponses: Record<string, string> = {
-      claude: `[CLAUDE DECK]: Analysis complete, chummer. ${query} requires careful consideration. The data suggests...`,
-      gpt4: `[GPT-4 DECK]: Processing neural pathways... Query resolved. Based on shadow net intel...`,
-      gemini: `[GEMINI DECK]: Quantum processing engaged. Your query about ${query.slice(0, 30)}... yielding results...`,
+    const mockResponses: any = {
+      claude: `[CLAUDE DECK]: Analysis complete, chummer. ${query.slice(0, 50)}...`,
+      gpt4: `[GPT-4 DECK]: Processing neural pathways...`,
+      gemini: `[GEMINI DECK]: Quantum processing engaged...`,
     };
 
-    const response = mockResponses[model];
+    const response = mockResponses[model] || mockResponses.claude;
 
     const queryId = db.saveAIQuery({
       query,
@@ -550,7 +372,6 @@ addEntrypoint({
     });
 
     console.log(`[AI DECK] ${getRandomPhrase()}`);
-    console.log(`[AI DECK] Query ${queryId} processed by ${model.toUpperCase()}`);
 
     return {
       output: {
@@ -566,52 +387,28 @@ addEntrypoint({
 });
 
 // ============================================================================
-// ENTRYPOINT 9: Node Status & Reputation
+// ENTRYPOINT 9: Node Status
 // ============================================================================
 
 addEntrypoint({
   key: "node-status",
-  description: "📊 Check the status and reputation of proxy nodes on the network.",
-  inputSchema: z.object({
-    network: z.enum(["tor", "i2p", "clearnet"]).optional().describe("Filter by network type"),
-    minReputation: z.number().min(0).max(1).default(0.5).describe("Minimum reputation threshold"),
-  }),
-  outputSchema: z.object({
-    nodes: z.array(
-      z.object({
-        nodeId: z.string(),
-        network: z.string(),
-        reputation: z.number(),
-        totalSessions: z.number(),
-        totalBytes: z.string(),
-        earnings: z.string(),
-        region: z.string().optional(),
-      })
-    ),
-    total: z.number(),
-    averageReputation: z.number(),
-    message: z.string(),
-  }),
-  async handler(ctx) {
-    const input = ctx.input as {
-      network?: "tor" | "i2p" | "clearnet";
-      minReputation: number;
-    };
-
-    const { network, minReputation } = input;
+  description: "📊 Check the status and reputation of proxy nodes.",
+  async handler(ctx: any) {
+    const input = ctx.input || {};
+    const network = input.network;
+    const minReputation = input.minReputation || 0.5;
 
     let nodes = db.getProxyNodes(minReputation);
 
     if (network) {
-      nodes = nodes.filter((n) => n.network === network);
+      nodes = nodes.filter((n: any) => n.network === network);
     }
 
-    const avgReputation =
-      nodes.reduce((sum, n) => sum + n.reputation, 0) / (nodes.length || 1);
+    const avgReputation = nodes.reduce((sum: number, n: any) => sum + n.reputation, 0) / (nodes.length || 1);
 
     return {
       output: {
-        nodes: nodes.map((node) => ({
+        nodes: nodes.map((node: any) => ({
           nodeId: node.id,
           network: node.network,
           reputation: Math.round(node.reputation * 100) / 100,
@@ -634,23 +431,7 @@ addEntrypoint({
 
 addEntrypoint({
   key: "system-info",
-  description: "ℹ️ Get information about the ShadowLlama network. No payment required.",
-  inputSchema: z.object({}),
-  outputSchema: z.object({
-    name: z.string(),
-    version: z.string(),
-    network: z.string(),
-    nodeMode: z.string(),
-    pricing: z.object({
-      perMB: z.string(),
-      perSecond: z.string(),
-      deadDrop: z.string(),
-      aiQuery: z.string(),
-      bountyPost: z.string(),
-    }),
-    capabilities: z.array(z.string()),
-    message: z.string(),
-  }),
+  description: "ℹ️ Get information about the ShadowLlama network.",
   requiresPayment: false,
   async handler() {
     return {
