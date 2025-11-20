@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc",
     "client": "bun run src/client.ts",
     "client:examples": "bun run src/client.ts examples"
   },
