@@ -6,18 +6,19 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "client": "bun run src/client.ts",
     "client:examples": "bun run src/client.ts examples"
   },
   "dependencies": {
     "@hono/node-server": "^1.18.2",
+    "@lucid-dreams/agent-kit": "^0.1.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.5",
     "hono": "^4.9.1",
+    "nanoid": "^5.0.7",
     "viem": "^2.33.3",
     "x402-fetch": "^0.5.1",
-    "x402-hono": "^0.5.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
