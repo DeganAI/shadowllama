@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.18.2",
-    "@lucid-dreams/agent-kit": "^0.1.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.5",
     "hono": "^4.9.1",
