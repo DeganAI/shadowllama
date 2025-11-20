@@ -7,7 +7,7 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "allowJs": true,
-    "noEmit": true,
+    "noEmit": false,
     "outDir": "./dist",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
