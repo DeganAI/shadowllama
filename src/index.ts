@@ -1,6 +1,7 @@
 // src/index.ts
 // ShadowLlama Main Application - Cyberpunk Dark Web Proxy
 
+import './server.js';
 import { createAgentApp } from "@lucid-dreams/agent-kit";
 import { config, BANNER, getRandomPhrase } from "./config/index.js";
 import { ShadowLlamaDB } from "./db/index.js";
