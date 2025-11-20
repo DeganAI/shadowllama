@@ -34,13 +34,14 @@ async function testProxyStream() {
     }),
   });
 
-  const result = await response.json();
+  const result = await response.json() as any;
   console.log("✓ Session:", result.sessionId);
-  console.log("✓ Node:", result.selectedNode.id, "-", result.selectedNode.region);
+  console.log("✓ Node:", result.selectedNode?.id, "-", result.selectedNode?.region);
   console.log("✓ Cost:", result.estimatedCost);
 
-  const paymentInfo = decodeXPaymentResponse(response.headers.get("x-payment-response") || "");
-  if (paymentInfo) {
+  const paymentHeader = response.headers.get("x-payment-response");
+  if (paymentHeader) {
+    const paymentInfo = decodeXPaymentResponse(paymentHeader);
     console.log("💳 Tx:", paymentInfo.transaction);
   }
 }
@@ -60,7 +61,7 @@ async function testDeadDrop() {
     }),
   });
 
-  const created = await createResponse.json();
+  const created = await createResponse.json() as any;
   console.log("✓ Created drop:", created.dropId);
   console.log("✓ Price:", created.price);
   console.log("✓ Expires:", created.expiresAt);
@@ -70,14 +71,16 @@ async function runTests() {
   try {
     // Health check (free)
     console.log("\n❤️  Health Check (FREE)...");
-    const health = await fetch(`${SERVICE_URL}/health`).then(r => r.json());
+    const healthRes = await fetch(`${SERVICE_URL}/health`);
+    const health = await healthRes.json() as any;
     console.log("✓ Status:", health.status);
 
     // Service info (free)
     console.log("\nℹ️  Service Info (FREE)...");
-    const info = await fetch(`${SERVICE_URL}/`).then(r => r.json());
+    const infoRes = await fetch(`${SERVICE_URL}/`);
+    const info = await infoRes.json() as any;
     console.log("✓ Name:", info.name);
-    console.log("✓ Endpoints:", Object.keys(info.endpoints).length);
+    console.log("✓ Endpoints:", Object.keys(info.endpoints || {}).length);
 
     // Paid tests
     await testProxyStream();
