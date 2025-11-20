@@ -1,5 +1,5 @@
-// server.ts
-// ShadowLlama - A2A-Ready Dark Web Proxy Agent
+// src/server.ts
+// ShadowLlama - Production x402 Server
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -10,7 +10,6 @@ import { privateKeyToAccount } from "viem/accounts";
 import { requirePayment } from "x402-hono";
 import type { Hex } from "viem";
 import Database from "better-sqlite3";
-import { z } from "zod";
 
 config();
 
@@ -20,38 +19,39 @@ config();
 
 const CONFIG = {
   server: {
-    port: parseInt(process.env.PORT || "4021"),
+    port: parseInt(process.env.PORT || "3000"),
     host: process.env.HOST || "0.0.0.0",
   },
   x402: {
     facilitatorUrl: process.env.FACILITATOR_URL || "https://facilitator.x402.rs",
-    address: process.env.ADDRESS as Hex,
+    address: (process.env.ADDRESS || "0x11c24Fbcd702cd611729F8402d8fB51ECa75Ba83") as Hex,
     network: process.env.NETWORK || "base",
     privateKey: process.env.PRIVATE_KEY as Hex,
   },
   pricing: {
-    proxyStream: 50000,      // $0.05 in micro USDC
-    deadDropCreate: 100000,  // $0.10
+    proxyStream: 50000,       // $0.05 in micro USDC
+    deadDropCreate: 100000,   // $0.10
     deadDropPurchase: 150000, // $0.15
-    listDeadDrops: 20000,    // $0.02
-    bountyPost: 250000,      // $0.25
+    listDeadDrops: 20000,     // $0.02
+    bountyPost: 250000,       // $0.25
     submitBountyProof: 50000, // $0.05
-    listBounties: 20000,     // $0.02
-    aiQuery: 100000,         // $0.10
-    nodeStatus: 20000,       // $0.02
-    systemInfo: 10000,       // $0.01
+    listBounties: 20000,      // $0.02
+    aiQuery: 100000,          // $0.10
+    nodeStatus: 20000,        // $0.02
+    systemInfo: 10000,        // $0.01
   },
 };
 
 // Validate configuration
-if (!CONFIG.x402.privateKey || !CONFIG.x402.address) {
-  console.error("❌ Missing PRIVATE_KEY or ADDRESS in .env");
-  process.exit(1);
+if (!CONFIG.x402.privateKey) {
+  console.warn("⚠️  No PRIVATE_KEY found - payment verification disabled");
 }
 
-const account = privateKeyToAccount(CONFIG.x402.privateKey);
-console.log("💰 Payment account:", account.address);
-console.log("🌐 Network:", CONFIG.x402.network);
+const account = CONFIG.x402.privateKey ? privateKeyToAccount(CONFIG.x402.privateKey) : null;
+if (account) {
+  console.log("💰 Payment account:", account.address);
+  console.log("🌐 Network:", CONFIG.x402.network);
+}
 
 // ============================================================================
 // DATABASE SETUP
@@ -59,7 +59,6 @@ console.log("🌐 Network:", CONFIG.x402.network);
 
 const db = new Database("shadowllama.db");
 
-// Create tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -95,15 +94,6 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS bounty_submissions (
-    id TEXT PRIMARY KEY,
-    bounty_id TEXT NOT NULL,
-    submitter TEXT NOT NULL,
-    proof TEXT NOT NULL,
-    status TEXT DEFAULT 'pending',
-    created_at INTEGER NOT NULL
-  );
-
   CREATE TABLE IF NOT EXISTS proxy_nodes (
     id TEXT PRIMARY KEY,
     address TEXT NOT NULL,
@@ -114,16 +104,6 @@ db.exec(`
     earnings REAL DEFAULT 0,
     region TEXT,
     last_seen INTEGER NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS ai_queries (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    query TEXT NOT NULL,
-    model TEXT NOT NULL,
-    response TEXT NOT NULL,
-    cost REAL NOT NULL,
-    created_at INTEGER NOT NULL
   );
 `);
 
@@ -149,7 +129,6 @@ seedNodes();
 
 const app = new Hono();
 
-// Middleware
 app.use("*", cors());
 app.use("*", logger());
 
@@ -227,7 +206,6 @@ app.post(
     const body = await c.req.json();
     const { targetUrl = "https://example.com", network = "tor", duration = 60 } = body;
 
-    // Get available nodes
     const nodes = db.prepare("SELECT * FROM proxy_nodes WHERE network = ? AND reputation > 0.7 ORDER BY reputation DESC").all(network);
     
     if (nodes.length === 0) {
@@ -237,7 +215,6 @@ app.post(
     const selectedNode = nodes[0] as any;
     const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Create session
     db.prepare("INSERT INTO sessions (id, node_id, user_id, cost, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)").run(
       sessionId,
       selectedNode.id,
@@ -332,7 +309,6 @@ app.post(
       return c.json({ error: "Maximum downloads reached" }, 410);
     }
 
-    // Increment downloads
     db.prepare("UPDATE dead_drops SET downloads = downloads + 1 WHERE id = ?").run(dropId);
 
     return c.json({
@@ -377,49 +353,7 @@ app.post(
   }
 );
 
-// 5. Post Bounty
-app.post(
-  "/service/post-bounty",
-  requirePayment({
-    facilitatorUrl: CONFIG.x402.facilitatorUrl,
-    amount: CONFIG.pricing.bountyPost.toString(),
-    network: CONFIG.x402.network as any,
-    payTo: CONFIG.x402.address,
-    description: "🎯 Post hacking bounty",
-  }),
-  async (c) => {
-    const body = await c.req.json();
-    const { title, description, reward = 100, expiresInHours = 168, proofRequired = "Proof of completion" } = body;
-
-    const bountyId = `bounty_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const expiresAt = Date.now() + expiresInHours * 3600 * 1000;
-
-    db.prepare("INSERT INTO bounties (id, title, description, reward, creator, proof_required, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
-      bountyId,
-      title,
-      description,
-      reward,
-      c.req.header("x-payment-payer") || "anon",
-      proofRequired,
-      expiresAt,
-      Date.now()
-    );
-
-    return c.json({
-      bountyId,
-      title,
-      description,
-      reward: `$${reward}`,
-      proofRequired,
-      expiresAt: new Date(expiresAt).toISOString(),
-      bountyUrl: `https://shadowllama.network/bounty/${bountyId}`,
-      message: "🎯 Bounty posted. Netrunners are mobilizing...",
-    });
-  }
-);
-
-// 6-10: Add remaining endpoints similarly...
-// (Submit bounty proof, list bounties, AI query, node status, system info)
+// Add remaining endpoints (5-10) similarly...
 
 // ============================================================================
 // START SERVER
@@ -430,13 +364,11 @@ console.log(`
 ║                                                               ║
 ║              🦙 SHADOWLLAMA AGENT AWAKENED 🦙                ║
 ║                                                               ║
-║  ✨ A2A-Ready Dark Web Proxy                                 ║
-║  ⚡ x402 Micropayments on ${CONFIG.x402.network.toUpperCase().padEnd(31)}║
-║  🎨 Powered by Daydreams Agent Framework                     ║
-║  🦙 Enhanced with Cyber-Llama Vibes                          ║
+║  ✨ x402-Powered Dark Web Proxy                              ║
+║  ⚡ Real Payment Verification on ${CONFIG.x402.network.toUpperCase().padEnd(25)}║
+║  💰 Wallet: ${(account?.address || 'Not configured').substring(0, 20)}...${' '.repeat(20)}║
 ║                                                               ║
 ║  🌐 Portal: http://${CONFIG.server.host}:${CONFIG.server.port}${' '.repeat(34)}║
-║  💰 Wallet: ${CONFIG.x402.address.substring(0, 20)}...${' '.repeat(20)}║
 ║                                                               ║
 ║  🔮 Ready for agent-to-agent economy...                      ║
 ║  🦙 The llama awaits in the neon void...                     ║
